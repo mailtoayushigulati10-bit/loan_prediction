@@ -2,51 +2,46 @@ from flask import Flask, render_template, request
 import numpy as np
 import pickle
 import os
-from time import time  # for cache-busting CSS
+from time import time  # For CSS cache-busting
 
+# -------------------- FLASK APP --------------------
 app = Flask(__name__, static_folder="static", template_folder="templates")
 
-# Load trained model and scaler
-try:
-    model = pickle.load(open("loan_model.pkl", "rb"))
-    scaler = pickle.load(open("scaler.pkl", "rb"))
-except Exception as e:
-    print(f"Error loading model/scaler: {e}")
-    model = None
-    scaler = None
+# -------------------- LOAD MODEL & SCALER --------------------
+model = pickle.load(open("loan_model.pkl", "rb"))
+scaler = pickle.load(open("scaler.pkl", "rb"))
 
-# Mapping for categorical features
-gender_map = {"Female": 0, "Male": 1}
-married_map = {"No": 0, "Yes": 1}
-dependents_map = {"0": 0, "1": 1, "2": 2, "3+": 3}
-education_map = {"Graduate": 0, "Not Graduate": 1}
-self_employed_map = {"No": 0, "Yes": 1}
-property_area_map = {"Rural": 0, "Semiurban": 1, "Urban": 2}
-
+# -------------------- ROUTES --------------------
 @app.route("/")
 def home():
-    return render_template("index.html", time=int(time()))  # Pass time for CSS cache-busting
+    # Pass timestamp to avoid CSS caching
+    return render_template("index.html", time=time())
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    if model is None or scaler is None:
-        return render_template("index.html", prediction_text="Model not loaded!", time=int(time()))
-    
     try:
-        # Read form data
-        gender = request.form.get("Gender")
-        married = request.form.get("Married")
-        dependents = request.form.get("Dependents")
-        education = request.form.get("Education")
-        self_employed = request.form.get("Self_Employed")
-        applicant_income = int(request.form.get("ApplicantIncome"))
-        coapplicant_income = int(request.form.get("CoapplicantIncome"))
-        loan_amount = int(request.form.get("LoanAmount"))
-        loan_amount_term = int(request.form.get("Loan_Amount_Term"))
-        credit_history = int(request.form.get("Credit_History"))
-        property_area = request.form.get("Property_Area")
+        # -------- GET FORM DATA --------
+        gender = request.form["Gender"]
+        married = request.form["Married"]
+        dependents = request.form["Dependents"]
+        education = request.form["Education"]
+        self_employed = request.form["Self_Employed"]
+        applicant_income = int(request.form["ApplicantIncome"])
+        coapplicant_income = int(request.form["CoapplicantIncome"])
+        loan_amount = int(request.form["LoanAmount"])
+        loan_amount_term = int(request.form["Loan_Amount_Term"])
+        credit_history = int(request.form["Credit_History"])
+        property_area = request.form["Property_Area"]
 
-        # Convert to model input
+        # -------- LABEL ENCODER MAPPING --------
+        gender_map = {"Female": 0, "Male": 1}
+        married_map = {"No": 0, "Yes": 1}
+        dependents_map = {"0": 0, "1": 1, "2": 2, "3+": 3}
+        education_map = {"Graduate": 0, "Not Graduate": 1}
+        self_employed_map = {"No": 0, "Yes": 1}
+        property_area_map = {"Rural": 0, "Semiurban": 1, "Urban": 2}
+
+        # -------- FEATURE ORDER MUST MATCH TRAINING --------
         features = [
             gender_map[gender],
             married_map[married],
@@ -61,21 +56,26 @@ def predict():
             property_area_map[property_area]
         ]
 
-        features_scaled = scaler.transform([features])
-        prediction = model.predict(features_scaled)[0]
-        probability = model.predict_proba(features_scaled)[0][1]
+        final_features = np.array([features])
+        final_features_scaled = scaler.transform(final_features)
 
-        result_text = "Approved" if prediction == 1 else "Not Approved"
+        # -------- PREDICTION --------
+        prediction = model.predict(final_features_scaled)[0]
+        probability = model.predict_proba(final_features_scaled)[0][1]
+
+        result = "Approved" if prediction == 1 else "Not Approved"
 
         return render_template(
             "index.html",
-            prediction_text=f"Loan Status: {result_text} (Probability: {probability:.2f})",
-            time=int(time())
+            prediction_text=f"Loan Status: {result} (Approval Probability: {probability:.2f})",
+            time=time()  # update CSS cache
         )
 
     except Exception as e:
-        return render_template("index.html", prediction_text=f"Error: {e}", time=int(time()))
+        return render_template("index.html", prediction_text=f"Error: {e}", time=time())
 
+# -------------------- RUN APP --------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Render sets PORT automatically
+    # Use PORT env variable provided by Render
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
